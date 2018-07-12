@@ -1,12 +1,17 @@
 
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
+import java.util.Random;
+import java.util.concurrent.Semaphore;
 
 public class VList implements DGraph{
 	
 	final private Lock mutex = new ReentrantLock();
 	private vnode head;
 	private vnode tail;
+	private int limit;
+	private Semaphore sem = null;
+	final private Semaphore semHasReady = new Semaphore(0); 
 	
 	class vnode{
 		
@@ -19,6 +24,7 @@ public class VList implements DGraph{
 	    enode tail;
 	    // final private Lock lock;
 	    final private ReentrantLock lock;
+	    Random r = new Random();
 	    
 	    class enode{
 	    	private Vertex vertex;
@@ -72,6 +78,9 @@ public class VList implements DGraph{
 		//diminui a dependencia desse vnode, algum nodo que ele dependia foi removido da lista
 		public void dependsLess() {
 			depends--;
+			if(depends == 0) {
+				semHasReady.release();
+			}
 		}
 		//retorna o inicio da lista de dependentes (quem depende desse vnode)
 		public enode getDependents() {
@@ -87,11 +96,12 @@ public class VList implements DGraph{
 		}
 		
 		public boolean isDependent(int otherData) {
-			if(data % 2 == otherData % 2) {
+			float random = r.nextFloat();
+			if(random <= 0.05) {
 				return true;
 			}
 			
-			return false;
+		return false;
 		}
 		
 		public Lock getLock() {
@@ -159,7 +169,11 @@ public class VList implements DGraph{
 	}
 	
 	
-	public VList() {
+	public VList(int limit) {
+		
+		this.limit = limit;
+		
+		sem = new Semaphore(limit, true);
 
 		head = new vnode(-1, Vertex.HEAD);
 		tail = new vnode(-1, Vertex.TAIL);
@@ -172,7 +186,7 @@ public class VList implements DGraph{
 		mutex.lock();
 		 try {
 			 
-			 
+			  sem.acquire();
 		      vnode newVnode = new vnode(data, Vertex.MESSAGE);
 
 			  newVnode.getLock().lock();
@@ -204,14 +218,22 @@ public class VList implements DGraph{
 	          newVnode.setNext(tail);
 	          
 	          aux.getLock().unlock();
+	          
+	          if(newVnode.getDepends() == 0) {
+	        	  semHasReady.release();
+	          }
 	            
 	          newVnode.getLock().unlock();
+	          
+	          
 	        } finally {
 	            mutex.unlock();
 	        }
 	}
 	//procura na lista por algum dado para processar
 	public int process() throws InterruptedException {
+		
+		semHasReady.acquire();
 		
 		vnode aux = head;
 		vnode passed;
@@ -267,7 +289,7 @@ public class VList implements DGraph{
 			    aux.setNext(removed.getNext()); 
 			    
 			    //    } finally {
-					
+						sem.release();
 			            aux.getLock().unlock();
 			            removed.getLock().unlock();
 						
